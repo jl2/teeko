@@ -6,7 +6,8 @@
   :description "Describe teeko here"
   :author "Jeremiah LaRocco <jeremiah.larocco@gmail.com>"
   :license "ISC (BSD-like)"
-  :depends-on (#:qtools
+  :depends-on (#:alexandria
+               #:qtools
                #:qtgui
                #:qtcore
                #:mixalot

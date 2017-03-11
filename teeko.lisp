@@ -53,26 +53,36 @@
         (dotimes (i 2)
           (with-slots (pieces) (aref players i)
             (setf pieces (sort pieces (lambda (a b)
-                                                (or (< (car a) (car b)) (< (cdr a) (cdr b))))))
-            (let ((same-car (every (lambda (val) (= (car val) (caar pieces))) pieces))
-                  (cdr-diff (- (cdar (last pieces)) (cdar pieces)))
-                  (same-cdr (every (lambda (val) (= (cdr val) (cdar pieces))) pieces))
-                  (car-diff (- (caar (last pieces)) (caar pieces))))
+                                        (and (< (car a) (car b)) (< (cdr a) (cdr b))))))
+            (let* ((same-car (every (lambda (val) (= (car val) (caar pieces))) pieces))
+                   (cdr-diff (- (cdar (last pieces)) (cdar pieces)))
+                   (same-cdr (every (lambda (val) (= (cdr val) (cdar pieces))) pieces))
+                   (car-diff (- (caar (last pieces)) (caar pieces)))
+                   (differences (loop for i in pieces for j in (cdr pieces)
+                                   collecting (cons (- (car j) (car i)) (- (cdr j) (cdr i)))))
+                   (diagnol-down (every
+                                  (curry #'equal '(1 . 1))
+                                  differences))
+                   (diagnol-up (every
+                                (curry #'equal '(1 . -1))
+                                differences)))
+              (format t "diagnol-down ~a diagnol-up ~a  differences ~a~%" diagnol-down diagnol-up differences)
               (when (or
                      (and same-car (= cdr-diff 3))
-                     (and same-cdr (= car-diff 3)))
+                     (and same-cdr (= car-diff 3))
+                     diagnol-down
+                     diagnol-up)
                 (return-from game-over-p i)))))
         nil)))
-         ;; (every (lambda (val) (= (car val) (caar pieces))) pieces)
-        
+
 (defun empty-p (board i j)
   "Check if board position i j is empty."
   (= (aref board i j) -1))
 
 
-(defun get-player-at (board i j)
+(defun get-status-at (board i j)
   "Return nil if there's no player at board position i j or if the position is invalid.  Otherwise return which player is there."
-  (cond ((or (< i 0) (< j 0) (>= i 5) (>= j 5) (= -1 (aref board i j)))
+  (cond ((or (< i 0) (< j 0) (>= i 5) (>= j 5))
          nil)
         (t
          (aref board i j))))
@@ -83,7 +93,7 @@
     (loop for a from -1 to 1
        do
          (loop for b from -1 to 1
-            for bl = (get-player-at board (+ a i) (+ b j)) then (get-player-at board (+ a i) (+ b j))
+            for bl = (get-status-at board (+ a i) (+ b j)) then (get-status-at board (+ a i) (+ b j))
             when (and bl (= bl -1))
             do (push (cons (+ i a) (+ j b)) empty)))
     empty))
@@ -109,13 +119,13 @@
   "Create a computer vs human Teeko game."
   (make-teeko :board (make-array '(5 5) :initial-element -1)
               :players (make-array 2 :initial-contents (list (make-player
-                                                               :name "Human"
-                                                               :add-function nil
-                                                               :move-function nil)
-                                                         (make-player 
-                                                          :name "Computer"
-                                                          :add-function #'add-computer
-                                                          :move-function #'move-computer)))
+                                                              :name "Human"
+                                                              :add-function nil
+                                                              :move-function nil)
+                                                             (make-player
+                                                              :name "Computer"
+                                                              :add-function #'add-computer
+                                                              :move-function #'move-computer)))
               :current-player 0))
 
 
