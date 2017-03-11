@@ -4,11 +4,9 @@
 
 (in-package #:teeko)
 
-;;; "teeko" goes here. Hacks and glory await!
-
 (named-readtables:in-readtable :qtools)
 
-(declaim (optimize (speed 0) (safety 3) (size 0) (debug 3)))
+(declaim (optimize (speed 2) (safety 3) (size 0) (debug 3)))
 
 (defclass click-streamer ()
   ((freq  :initform 440.0d0 :initarg :freq)
@@ -32,17 +30,6 @@
          (incf phase dp)))
   (mixalot:mixer-remove-streamer mixer streamer))
 
-(defun get-computer-move (game)
-  "Find a move for the computer."
-  (values 0 0))
-
-(defun add-computer (teeko)
-  (with-slots (board) teeko
-    (loop
-       for i = (random (array-dimension board 0)) then (random (array-dimension board 0))
-       for j = (random (array-dimension board 1)) then (random (array-dimension board 1))
-       until (empty-p board i j)
-       finally (return (values i j)))))
 
 (defstruct player
   "A player object containing a score, a function for getting a next move."
@@ -54,180 +41,153 @@
 (defstruct teeko
   "A structure representing a Dots and Boxes game."
   (board (make-array '(5 5) :initial-element -1))
-  (players (make-array 2 :initial-contents '((make-player)
-                                             (make-player))))
+  (opening-game t)
+  (players (make-array 2 :initial-contents (list (make-player)
+                                                 (make-player))))
   (current-player 0))
 
 (defun game-over-p (teeko)
-  "Check if the game is over yet."
-  nil)
+  "Check if the game is over.  Returns the winning player number or nil."
+  (with-slots (players current-player) teeko
+    (if (every (lambda (pl) (= (length (player-pieces pl)) 4)) players)
+        (dotimes (i 2)
+          (with-slots (pieces) (aref players i)
+            (setf pieces (sort pieces (lambda (a b)
+                                                (or (< (car a) (car b)) (< (cdr a) (cdr b))))))
+            (let ((same-car (every (lambda (val) (= (car val) (caar pieces))) pieces))
+                  (cdr-diff (- (cdar (last pieces)) (cdar pieces)))
+                  (same-cdr (every (lambda (val) (= (cdr val) (cdar pieces))) pieces))
+                  (car-diff (- (caar (last pieces)) (caar pieces))))
+              (when (or
+                     (and same-car (= cdr-diff 3))
+                     (and same-cdr (= car-diff 3)))
+                (return-from game-over-p i)))))
+        nil)))
+         ;; (every (lambda (val) (= (car val) (caar pieces))) pieces)
+        
+(defun empty-p (board i j)
+  "Check if board position i j is empty."
+  (= (aref board i j) -1))
 
-(defstruct teeko-pt
-  (i 0)
-  (j 0))
+
+(defun get-player-at (board i j)
+  "Return nil if there's no player at board position i j or if the position is invalid.  Otherwise return which player is there."
+  (cond ((or (< i 0) (< j 0) (>= i 5) (>= j 5) (= -1 (aref board i j)))
+         nil)
+        (t
+         (aref board i j))))
+
+(defun get-empty-adjacent (board i j)
+  "Find squares adjacent to i j that are empty."
+  (let ((empty nil))
+    (loop for a from -1 to 1
+       do
+         (loop for b from -1 to 1
+            for bl = (get-player-at board (+ a i) (+ b j)) then (get-player-at board (+ a i) (+ b j))
+            when (and bl (= bl -1))
+            do (push (cons (+ i a) (+ j b)) empty)))
+    empty))
+
+(defun move-computer (game)
+  "Move randomly."
+  (with-slots (board current-player players) game
+    (let* ((moving (nth (random 4) (player-pieces (aref players current-player))))
+           (adjacent (get-empty-adjacent board (car moving) (cdr moving)))
+           (goes-to (nth (random (length adjacent)) adjacent)))
+      (values (car moving) (cdr moving) (car goes-to) (cdr goes-to)))))
+
+(defun add-computer (teeko)
+  "Randomly add a game piece for the computer."
+  (with-slots (board) teeko
+    (loop
+       for i = (random 5) then (random 5)
+       for j = (random 5) then (random 5)
+       until (empty-p board i j)
+       finally (return (values i j)))))
 
 (defun create-teeko-game ()
   "Create a computer vs human Teeko game."
   (make-teeko :board (make-array '(5 5) :initial-element -1)
-              :players (make-array 2 :initial-contents '((make-player
-                                                          :name "Human"
-                                                          :add-function nil
-                                                          :move-function nil)
+              :players (make-array 2 :initial-contents (list (make-player
+                                                               :name "Human"
+                                                               :add-function nil
+                                                               :move-function nil)
                                                          (make-player 
                                                           :name "Computer"
-                                                          :add-function #'add-random
-                                                          :move-function #'get-computer-move)))
+                                                          :add-function #'add-computer
+                                                          :move-function #'move-computer)))
               :current-player 0))
-
-(defun show-teeko-board (teeko)
-
-  ;; Top row of column numbers
-  (terpri)
-  (format t "  ")
-  (dotimes (i 5)
-    (format t "  ~a   " i))
-  (terpri)
-  (with-slots (board players) teeko
-    (dotimes (j 5)
-
-      ;; Empty space to account for row number
-      (format t "   ")
-
-      ;; Top of box
-      (dotimes (i 5)
-        (format t "+---+ "))
-      (terpri)
-
-      ;; Row number
-      (format t "~2d " j)
-
-      ;; Boxes with player info
-      (dotimes (i 5)
-        (cond ((= (aref board i j) -1)
-               (format t "|   |-"))
-              (t
-               (format t "| ~1d |-" (aref board i j)))))
-      (terpri)
-
-      ;; Empty space for row number
-      (format t "   ")
-
-      ;; Bottom of boxes
-      (dotimes (i 5)
-        (format t "+---+ "))
-      (terpri)
-
-      ;; Empty space for row number
-      (format t "   ")
-
-      ;; Connecting lines at bottom
-      (when (/= j 4)
-        (dotimes (i 5)
-          (format t "  |   "))
-        (terpri)))))
-
-(defun empty-p (board i j)
-  (= (aref board i j) -1))
-
-(defun add-player (teeko)
-  (with-slots (board) teeko
-    (loop
-       for out = (format t "Where do you want to place your piece? ")
-       then (format t "That position was invalid!~%Where do you want to place your piece? ")
-       for i = (read) then (read)
-       for j = (read) then (read)
-       until (and (integerp i)
-                  (integerp j)
-                  (>= i 0)
-                  (>= j 0)
-                  (< i (array-dimension board 0))
-                  (< i (array-dimension board 1))
-                  (empty-p board i j))
-       finally (return (values i j)))))
-
-(defun get-player-move (teeko)
-  (values 0 0))
-
-(defun repl-teeko (&optional (name "Human"))
-  (let ((teeko (make-teeko :board (make-array '(5 5) :initial-element -1)
-                           :players (make-array 2 :initial-contents (list (make-player
-                                                                           :name name
-                                                                           :add-function #'add-player
-                                                                           :move-function #'get-player-move)
-                                                                          (make-player 
-                                                                           :name "Computer"
-                                                                           :add-function #'add-computer
-                                                                           :move-function #'get-computer-move)))
-                           :current-player 0)))
-    (with-slots (board players current-player) teeko
-      (dotimes (i 4)
-        (dotimes (j 2)
-          (show-teeko-board teeko)
-          (multiple-value-bind (x y) (funcall (player-add-function (aref players j)) teeko)
-            (setf (aref board x y) j)
-            (push (player-pieces ))))
-    (show-teeko-board teeko)))
-
-
-
-
-
 
 
 (define-widget main-window (QMainWindow)
-  ((next-game-size :initform 5 :type fixnum)
-   (mixer    :initform (mixalot:create-mixer)))
+  ((mixer    :initform (mixalot:create-mixer)))
   (:documentation "A Window containing a Teeko widget."))
 
 
 (define-widget teeko-game-widget (QWidget)
-  ((teeko-game :initform (create-teeko-game 5))
+  ((teeko-game :initform (create-teeko-game))
+   (holding-piece :initform nil)
    (mixer :initform nil)
    (click-streamer :initform (make-instance 'click-streamer :freq 1200))
+   (bad-click-streamer :initform (make-instance 'click-streamer :freq 800))
    (win-streamer :initform (make-instance 'click-streamer :freq 1400))
    (lose-streamer :initform (make-instance 'click-streamer :freq 400)))
   (:documentation "A widget that playes a plays Teeko."))
 
 
 (define-initializer (teeko-game-widget setup)
-  "Turn on mouse tracking."
-  (setf (q+:mouse-tracking teeko-game-widget) t))
+  "Turn on mouse tracking.")
 
 
-(define-slot (teeko-game-widget new-game) ((size int))
+(define-slot (teeko-game-widget new-game) ()
   "Start a new game."
-  (declare (connected teeko-game-widget (new-game int)))
-  (setf teeko-game (create-teeko-game size))
+  (declare (connected teeko-game-widget (new-game)))
+  (setf teeko-game (create-teeko-game))
   (q+:repaint teeko-game-widget))
 
 (define-slot (teeko-game-widget computer-turn) ()
   "Place an edge for the computer."
   (declare (connected teeko-game-widget (computer-turn)))
-  (with-slots (players ) teeko-game
-    (multiple-value-bind (v1 v2) (funcall (player-edge-function computer-player) graph)
-      (let ((result (handle-new-edge teeko-game v1 v2 mixer box-streamer click-streamer)))
-        (q+:repaint teeko-game-widget)
-        (cond ((eq result :game-over) (signal! teeko-game-widget (game-over)))
-              ((eq result :computer) (signal! teeko-game-widget (computer-turn))))))))
+  (with-slots (opening-game players board current-player) teeko-game
+    (let* ((comp-player (aref players current-player))
+           (add-function (player-add-function comp-player))
+           (move-function (player-move-function comp-player)))
+
+      (mixalot:mixer-add-streamer mixer click-streamer)
+      (if opening-game
+          (multiple-value-bind (i j) (funcall add-function teeko-game)
+            (setf (aref board i j) current-player)
+            (push (cons i j) (player-pieces (aref players current-player)))
+            (when (= (length (player-pieces (aref players current-player))) 4)
+              (setf opening-game nil)))
+
+          (multiple-value-bind (i j ni nj) (funcall move-function teeko-game)
+            (with-slots (pieces) (aref players current-player)
+              (setf pieces (nsubst (cons ni nj) (cons i j) pieces :test #'equal)))
+            
+            ;; (setf (player-pieces (aref players current-player))
+            ;;          (nsubst (cons i j) holding-piece (player-pieces (aref players current-player)) :test #'cons=))
+            (setf (aref board ni nj) current-player)
+            (setf (aref board i j) -1)))
+
+      (q+:repaint teeko-game-widget)
+      (if (game-over-p teeko-game)
+          (signal! teeko-game-widget (game-over))
+          (setf current-player (mod (1+ current-player) 2))))))
+
 
 (define-slot (teeko-game-widget game-over) ()
   "Handle the end of the game."
   (declare (connected teeko-game-widget (game-over)))
-  (with-slots (computer-player human-player) teeko-game
-    (let* ((player-score (player-score human-player))
-           (computer-score (player-score computer-player))
-           (tie (= player-score computer-score))
-           (human-won (> player-score computer-score))
-           (message (if tie
-                        "It was a tie! Try again!"
-                        (if human-won
-                            (format nil "You won, ~a to ~a!" player-score computer-score)
-                            (format nil "You've lost! ~a to ~a!" player-score computer-score))))
-           (sound (if tie
+  (with-slots (players ) teeko-game
+    (let* ((winner (game-over-p teeko-game))
+           (human-won (= winner 0))
+           (message (if human-won
+                        "You've won!"
+                        "You've lost!"))
+           (sound (if human-won
                       win-streamer
-                      (if human-won
-                          win-streamer
-                          lose-streamer))))
+                      lose-streamer)))
       (mixalot:mixer-add-streamer mixer sound)
       (q+:qmessagebox-information teeko-game-widget "Game Over!" message))))
 
@@ -237,10 +197,9 @@
   (with-finalizing 
       ;; Create a painter object to draw on
       ((painter (q+:make-qpainter teeko-game-widget))
-       (green-pen (q+:make-qpen (q+:make-qcolor 0 205 0)))
-       (red-pen (q+:make-qpen (q+:make-qcolor 205 0 0))))
+       (green-pen (q+:make-qpen (q+:make-qcolor 0 205 0))))
 
-    (with-slots (graph squares owners) teeko-game
+    (with-slots (players current-player board) teeko-game
 
       ;; Clear the background
       (q+:fill-rect painter (q+:rect teeko-game-widget) (q+:qt.black))
@@ -248,131 +207,88 @@
       (let* ((height (q+:height teeko-game-widget))
              (width (q+:width teeko-game-widget))
              (smallest (min height width))
-             (adjusted-size (+ 2 (teeko-game-size teeko-game)))
+             (adjusted-size (+ 2 5))
              (step-size (floor (/ smallest adjusted-size)))
-             (points (graph-points graph)))
-
-        ;; Draw filled squares
-        (flet ((draw-square (square &optional temp)
-                 (let ((pt (aref (graph-points graph) square)))
-                   (q+:fill-rect painter 
-                                 (+ step-size (* step-size (point-x-loc pt) ))
-                                 (+ step-size (* step-size (point-y-loc pt) ))
-                                 step-size
-                                 step-size
-                                 (if temp
-                                     (q+:qt.blue)
-                                     (cdr (assoc square owners)))))))
-
-          ;; Finished squares
-          (dolist (square squares)
-            (draw-square square))
-
-          ;; Potentially finished by player's next move
-          (when two-closest
-            (let ((v0 (cdar two-closest))
-                  (v1 (cdadr two-closest)))
-              (when (not (has-edge-p graph v0 v1 ))
-                (add-edge graph v0 v1)
-                (let ((new-squares (set-difference (find-complete-squares graph) squares)))
-                  (dolist (square new-squares)
-                    (draw-square square t)))
-                (remove-edge graph v0 v1)))))
+             (colors (make-array 3 :initial-contents (list (q+:qt.blue) (q+:qt.red) (q+:qt.green)))))
 
         ;; Draw edges
-        (loop for i from 0
-           for edges across (graph-edges graph)
+        (loop for i from 0 to 5
            do
-             (dolist (vert edges)
-               (when (< i vert)
-                 (let ((pt1 (aref points i))
-                       (pt2 (aref points vert)))
-                   (q+:draw-line painter
-                                 (+ step-size (* step-size (point-x-loc pt1)))
-                                 (+ step-size (* step-size (point-y-loc pt1)))
-                                 (+ step-size (* step-size (point-x-loc pt2)))
-                                 (+ step-size (* step-size (point-y-loc pt2))))))))
+             (q+:draw-line painter
+                           (+ step-size (* i step-size)) step-size
+                           (+ step-size (* i step-size)) (* (1- adjusted-size) step-size))
+             (q+:draw-line painter
+                           step-size (+ step-size (* i step-size) )
+                           (* (1- adjusted-size) step-size) (+ step-size (* i step-size))))
+        (dotimes (i 2)
+          (dolist (piece (player-pieces (aref players i)))
+            (q+:fill-rect painter 
+                          (+ step-size (* step-size (car piece) ))
+                          (+ step-size (* step-size (cdr piece) ))
+                          step-size
+                          step-size
+                          (aref colors i))))
 
-        ;; Draw player's potential next move
-        (when (and two-closest (not (has-edge-p graph (cdar two-closest) (cdadr two-closest))))
-          (let ((pt1 (aref points (cdar two-closest)))
-                (pt2 (aref points (cdadr two-closest))))
-            (q+:set-pen painter red-pen)
-            (q+:draw-line painter
-                          (+ step-size (* step-size (point-x-loc pt1)))
-                          (+ step-size (* step-size (point-y-loc pt1)))
-                          (+ step-size (* step-size (point-x-loc pt2)))
-                          (+ step-size (* step-size (point-y-loc pt2))))))
-
-        ;; Draw points
-        (q+:set-pen painter green-pen)
-        (loop for pt across points
-           do
-             (let ((pt-x (- (+ step-size (* step-size (point-x-loc pt) )) 10))
-                   (pt-y (- (+ step-size (* step-size (point-y-loc pt) )) 10)))
-               (q+:draw-arc painter
-                            pt-x
-                            pt-y
-                            20 20
-                            0 (* 16 360))))))))
-
-(defun distance-squared (x1 y1 x2 y2)
-  "Squared distance between two points."
-  (+ (* (- x2 x1) (- x2 x1)) (* (- y2 y1) (- y2 y1))))
-
-(defun find-two-closest (x y step-size graph)
-  "Return the two closest points to point x,y in graph."
-  (sort (loop 
-           for idx from 0
-           for pt across (graph-points graph)
-           collecting (cons (distance-squared x y 
-                                              (+ step-size (* step-size (point-x-loc pt)))
-                                              (+ step-size (* step-size (point-y-loc pt))))
-                            idx))
-        #'<
-        :key #'car))
-
+        (when holding-piece
+          (dolist (piece (get-empty-adjacent board (car holding-piece) (cdr holding-piece)))
+            (q+:fill-rect painter 
+                          (+ step-size (* step-size (car piece) ))
+                          (+ step-size (* step-size (cdr piece) ))
+                          step-size
+                          step-size
+                          (aref colors 2))))))))
 
 (define-override (teeko-game-widget mouse-release-event mouse-release) (ev)
   "Handle a mouse click by possibly adding a new edge."
-  (with-slots (game-size squares players graph owners current-player) teeko-game
-    (when (and (not (game-over-p teeko-game)) (eq current-player :human))
+  (format t "Human's turn: ~a~%" teeko-game)
+  (with-slots (opening-game board players current-player) teeko-game
+    (when (and (not (game-over-p teeko-game)) (= current-player 0))
       (let* ((height (q+:height teeko-game-widget))
              (width (q+:width teeko-game-widget))
              (smallest (min height width))
-             (adjusted-size (+ 2 (teeko-game-size teeko-game)))
+             (adjusted-size (+ 5 2))
              (step-size (floor (/ smallest adjusted-size)))
+             (max-click (* 5 step-size))
+             (x-loc (- (q+:x ev) step-size))
+             (y-loc (- (q+:y ev) step-size))
+             
+             (i (floor (/ (* 5 x-loc) max-click)))
+             (j (floor (/ (* 5 y-loc) max-click))))
 
-             (x-loc (q+:x ev))
-             (y-loc (q+:y ev))
-             (closest (find-two-closest x-loc y-loc step-size graph))
-             (v1 (cdar closest))
-             (v2 (cdadr closest)))
-        (when (not (has-edge-p graph v1 v2))
-          (setf two-closest nil)
-          (let ((result (handle-new-edge teeko-game v1 v2 mixer click-streamer box-streamer)))
-            (cond ((eq result :game-over) (signal! teeko-game-widget (game-over)))
-                  ((eq result :computer) (signal! teeko-game-widget (computer-turn)))))
-          (q+:repaint teeko-game-widget))))))
+        (cond ((or (< x-loc 0) (< y-loc 0 ) (>= i 5) (>= j 5))
+               (mixalot:mixer-add-streamer mixer bad-click-streamer))
+              
+              (opening-game
+               (mixalot:mixer-add-streamer mixer click-streamer)
+               (setf (aref board i j) current-player)
+               (push (cons i j) (player-pieces (aref players current-player)))
+               (setf current-player (mod (1+ current-player) 2))
+               (q+:repaint teeko-game-widget)
+               (signal! teeko-game-widget (computer-turn)))
 
-(define-override (teeko-game-widget mouse-move-event mouse-move) (ev)
-  "Find the closest edge to the user's mouse and highlight it if it's not already in the graph."
-  (let* ((height (q+:height teeko-game-widget))
-         (width (q+:width teeko-game-widget))
-         (smallest (min height width))
-         (adjusted-size (+ 2 (teeko-game-size teeko-game)))
-         (step-size (floor (/ smallest adjusted-size)))
-         (graph (teeko-graph teeko-game))
-         (x-loc (q+:x ev))
-         (y-loc (q+:y ev))
-         (closest (find-two-closest x-loc y-loc step-size graph))
-         (v1 (cdar closest))
-         (v2 (cddr closest)))
+              ((and holding-piece (= (aref board i j) -1))
+               (mixalot:mixer-add-streamer mixer click-streamer)
+               (setf (aref board i j) current-player)
+               (setf (aref board (car holding-piece) (cdr holding-piece)) -1)
+               (with-slots (pieces) (aref players current-player)
+                 (setf pieces (nsubst (cons i j) holding-piece pieces :test #'equal)))
+               (setf holding-piece nil)
+               (q+:repaint teeko-game-widget)
+               (cond ((game-over-p teeko-game)
+                      (signal! teeko-game-widget (game-over)))
+                     (t
+                      (setf current-player (mod (1+ current-player) 2))
+                      (signal! teeko-game-widget (computer-turn)))))
 
-    (if (not (has-edge-p graph v1 v2))
-        (setf two-closest closest)
-        (setf two-closest nil)))
-  (q+:repaint teeko-game-widget))
+              (holding-piece 
+               (mixalot:mixer-add-streamer mixer bad-click-streamer))
+
+              ((= (aref board i j) current-player)
+               (mixalot:mixer-add-streamer mixer click-streamer)
+               (setf holding-piece (cons i j))
+               (q+:repaint teeko-game-widget))
+              (t
+               (mixalot:mixer-add-streamer mixer bad-click-streamer)))))))
 
 (define-subwidget (main-window teeko-widget) (make-instance 'teeko-game-widget)
   "The teeko-game-widget itself.")
@@ -385,7 +301,7 @@
 
 (define-menu (main-window Game)
   (:item ("New Game" (ctrl n))
-         (signal! teeko-widget (new-game int) next-game-size)
+         (signal! teeko-widget (new-game))
          (q+:repaint main-window))
   (:separator)
   (:item ("Quit" (ctrl q))
@@ -396,13 +312,11 @@
          (q+:qmessagebox-information main-window "About" "The game of Tweeko.")))
 
 (define-slot (main-window game-size) ((size int))
-  "Handle a change in game size."
-  (setf next-game-size size))
+  "Handle a change in game size.")
 
 (define-initializer (main-window setup)
   "Set the window title and set the teeko-widget to be the central widget."
   (setf (q+:window-title main-window) "Dots And Boxes")
-  (setf (q+:mouse-tracking main-window) t)
   (setf (slot-value teeko-widget 'mixer) mixer)
   (setf (q+:central-widget main-window) teeko-widget))
 
