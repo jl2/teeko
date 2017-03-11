@@ -46,14 +46,16 @@
                                                  (make-player))))
   (current-player 0))
 
+(defun pt-sort (a b)
+  (if (/=  (car a ) (car b)) (< (car a) (car b)) (< (cdr a) (cdr b))))
+
 (defun game-over-p (teeko)
   "Check if the game is over.  Returns the winning player number or nil."
   (with-slots (players current-player) teeko
     (if (every (lambda (pl) (= (length (player-pieces pl)) 4)) players)
         (dotimes (i 2)
           (with-slots (pieces) (aref players i)
-            (setf pieces (sort pieces (lambda (a b)
-                                        (and (< (car a) (car b)) (< (cdr a) (cdr b))))))
+            (setf pieces (sort pieces #'pt-sort))
             (let* ((same-car (every (lambda (val) (= (car val) (caar pieces))) pieces))
                    (cdr-diff (- (cdar (last pieces)) (cdar pieces)))
                    (same-cdr (every (lambda (val) (= (cdr val) (cdar pieces))) pieces))
@@ -101,11 +103,14 @@
 (defun move-computer (game)
   "Move randomly."
   (with-slots (board current-player players) game
-    (let* ((moving (nth (random 4) (player-pieces (aref players current-player))))
+    (let* ((moving 
+            (loop for moving = (nth (random 4) (player-pieces (aref players current-player)))
+               then (nth (random 4) (player-pieces (aref players current-player)))
+               until (get-empty-adjacent board (car moving) (cdr moving))
+               finally (return moving)))
            (adjacent (get-empty-adjacent board (car moving) (cdr moving)))
            (goes-to (nth (random (length adjacent)) adjacent)))
       (values (car moving) (cdr moving) (car goes-to) (cdr goes-to)))))
-
 (defun add-computer (teeko)
   "Randomly add a game piece for the computer."
   (with-slots (board) teeko
@@ -173,18 +178,14 @@
 
           (multiple-value-bind (i j ni nj) (funcall move-function teeko-game)
             (with-slots (pieces) (aref players current-player)
-              (setf pieces (nsubst (cons ni nj) (cons i j) pieces :test #'equal)))
-            
-            ;; (setf (player-pieces (aref players current-player))
-            ;;          (nsubst (cons i j) holding-piece (player-pieces (aref players current-player)) :test #'cons=))
-            (setf (aref board ni nj) current-player)
-            (setf (aref board i j) -1)))
+              (setf pieces (sort (nsubst (cons ni nj) (cons i j) pieces :test #'equal) #'pt-sort))
+              (setf (aref board ni nj) current-player)
+              (setf (aref board i j) -1))))
 
       (q+:repaint teeko-game-widget)
       (if (game-over-p teeko-game)
           (signal! teeko-game-widget (game-over))
           (setf current-player (mod (1+ current-player) 2))))))
-
 
 (define-slot (teeko-game-widget game-over) ()
   "Handle the end of the game."
@@ -203,7 +204,6 @@
 
 (define-override (teeko-game-widget paint-event paint) (ev)
   "Handle paint events."
-
   (with-finalizing 
       ;; Create a painter object to draw on
       ((painter (q+:make-qpainter teeko-game-widget))
@@ -276,12 +276,14 @@
                (q+:repaint teeko-game-widget)
                (signal! teeko-game-widget (computer-turn)))
 
-              ((and holding-piece (= (aref board i j) -1))
+              ((and holding-piece
+                    (= (aref board i j) -1)
+                    (find (cons i j) (get-empty-adjacent board (car holding-piece) (cdr holding-piece)) :test #'equal))
                (mixalot:mixer-add-streamer mixer click-streamer)
                (setf (aref board i j) current-player)
                (setf (aref board (car holding-piece) (cdr holding-piece)) -1)
                (with-slots (pieces) (aref players current-player)
-                 (setf pieces (nsubst (cons i j) holding-piece pieces :test #'equal)))
+                 (setf pieces (sort (nsubst (cons i j) holding-piece pieces :test #'equal) #'pt-sort)))
                (setf holding-piece nil)
                (q+:repaint teeko-game-widget)
                (cond ((game-over-p teeko-game)
@@ -293,7 +295,8 @@
               (holding-piece 
                (mixalot:mixer-add-streamer mixer bad-click-streamer))
 
-              ((= (aref board i j) current-player)
+              ((and (= (aref board i j) current-player)
+                    (get-empty-adjacent board i j))
                (mixalot:mixer-add-streamer mixer click-streamer)
                (setf holding-piece (cons i j))
                (q+:repaint teeko-game-widget))
