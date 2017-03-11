@@ -233,10 +233,10 @@
         (dotimes (i 2)
           (dolist (piece (player-pieces (aref players i)))
             (q+:fill-rect painter 
-                          (+ step-size (* step-size (car piece) ))
-                          (+ step-size (* step-size (cdr piece) ))
-                          step-size
-                          step-size
+                          (+ 1 step-size (* step-size (car piece) ))
+                          (+ 1 step-size (* step-size (cdr piece) ))
+                          (1- step-size)
+                          (1- step-size)
                           (aref colors i))))
 
         (when holding-piece
