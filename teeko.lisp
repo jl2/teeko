@@ -24,7 +24,7 @@
     (loop for index upfrom offset
        repeat length
        with dp = (* 2.0 pi freq 1/44100)
-       as sample = (round (* 1500 (sound-function phase)))
+       as sample = (round (* 200 (sound-function phase)))
        do
          (mixalot:stereo-mixf (aref buffer index) (mixalot:mono->stereo sample))
          (incf phase dp)))
@@ -68,7 +68,6 @@
                    (diagnol-up (every
                                 (curry #'equal '(1 . -1))
                                 differences)))
-              (format t "diagnol-down ~a diagnol-up ~a  differences ~a~%" diagnol-down diagnol-up differences)
               (when (or
                      (and same-car (= cdr-diff 3))
                      (and same-cdr (= car-diff 3))
@@ -111,6 +110,7 @@
            (adjacent (get-empty-adjacent board (car moving) (cdr moving)))
            (goes-to (nth (random (length adjacent)) adjacent)))
       (values (car moving) (cdr moving) (car goes-to) (cdr goes-to)))))
+
 (defun add-computer (teeko)
   "Randomly add a game piece for the computer."
   (with-slots (board) teeko
@@ -250,7 +250,6 @@
 
 (define-override (teeko-game-widget mouse-release-event mouse-release) (ev)
   "Handle a mouse click by possibly adding a new edge."
-  (format t "Human's turn: ~a~%" teeko-game)
   (with-slots (opening-game board players current-player) teeko-game
     (when (and (not (game-over-p teeko-game)) (= current-player 0))
       (let* ((height (q+:height teeko-game-widget))
