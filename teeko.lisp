@@ -20,10 +20,10 @@
 (defmethod mixalot:streamer-mix-into ((streamer click-streamer) mixer buffer offset length time)
   "Streamer callback that plays a sound into the mixer."
   (declare (ignore time))
-  (with-slots (n freq phase playing) streamer
+  (with-slots (freq phase) streamer
     (loop for index upfrom offset
        repeat length
-       with dp = (* 2.0 pi freq 1/44100)
+       with dp = (* 2.5 pi freq 1/44100)
        as sample = (round (* 200 (sound-function phase)))
        do
          (mixalot:stereo-mixf (aref buffer index) (mixalot:mono->stereo sample))
@@ -99,16 +99,27 @@
             do (push (cons (+ i a) (+ j b)) empty)))
     empty))
 
+(defun proxy-move-computer (game)
+  "This is a trick to allow recompiling from Slime.  Since this is called by funcall, it doesn't seem to get updated
+   when move-computer is recompiled."
+  (move-computer game))
+
 (defun move-computer (game)
   "Move randomly."
   (with-slots (board current-player players) game
     (let* ((moving 
-            (loop for moving = (nth (random 4) (player-pieces (aref players current-player)))
-               then (nth (random 4) (player-pieces (aref players current-player)))
-               until (get-empty-adjacent board (car moving) (cdr moving))
-               finally (return moving)))
+            (with-slots (pieces) (aref players current-player)
+              ;; Pick a random piece with empty adjacent squares
+              (loop for moving = (nth (random 4) pieces) then (nth (random 4) pieces)
+                 until (get-empty-adjacent board (car moving) (cdr moving))
+                 finally (return moving))))
+
+           ;; Get the adjacent spots
            (adjacent (get-empty-adjacent board (car moving) (cdr moving)))
+
+           ;; Pick one at random
            (goes-to (nth (random (length adjacent)) adjacent)))
+      ;; Return the coordinates of the moving piece and where it's going to
       (values (car moving) (cdr moving) (car goes-to) (cdr goes-to)))))
 
 (defun add-computer (teeko)
@@ -130,7 +141,7 @@
                                                              (make-player
                                                               :name "Computer"
                                                               :add-function #'add-computer
-                                                              :move-function #'move-computer)))
+                                                              :move-function #'proxy-move-computer)))
               :current-player 0))
 
 
